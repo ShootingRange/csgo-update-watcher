@@ -1,10 +1,9 @@
-module github.com/shootinrange/csgo-update-watcher
+module csgo-update-watcher
 
 go 1.17
 
 require (
-	github.com/docker/docker v20.10.11+incompatible
-	github.com/google/uuid v1.2.0
+	github.com/docker/docker v20.10.12+incompatible
 	github.com/rs/zerolog v1.26.0
 )
 

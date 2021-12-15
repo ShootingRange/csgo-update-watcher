@@ -1,17 +1,22 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"fmt"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
-	"archive/tar"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/client"
-	"github.com/rs/zerolog/log"
 )
 
 const CSGO_CONTAINER_FILES = "./csgo-container"
@@ -21,11 +26,11 @@ type Config struct {
 }
 
 type UpdateWatcher struct {
-	ctx context.Context
+	ctx           context.Context
 	BaseImageName string
 	// TODO CheckerImageName string // Image used for check latest version on steam
-	dockerCli *client.Client
-	checkFrequency time.Duration
+	dockerCli        *client.Client
+	checkFrequency   time.Duration
 	buildContextFile string
 }
 
@@ -35,8 +40,10 @@ func main() {
 		panic(err)
 	}
 
-	updateWatcher := New("csgo-watched", cli, time.Minute * 5)
-	updateWatcher.Start(false)
+	updateWatcher := New("csgo-watched", cli, time.Minute*5)
+	if err := updateWatcher.Start(false); err != nil {
+		panic(err)
+	}
 }
 
 func must(err error) {
@@ -75,9 +82,11 @@ func (this *UpdateWatcher) createBuildContext() error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp file for build context tar: %w", err)
 	}
-	defer must(file.Close())
+	log.Debug().Str("path", file.Name()).Msg("Created context.tar")
 
 	tw := tar.NewWriter(file)
+	defer func() { must(tw.Close()) }()
+
 	walkRoot, err := filepath.Abs(CSGO_CONTAINER_FILES)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path of build context: %w", err)
@@ -88,12 +97,12 @@ func (this *UpdateWatcher) createBuildContext() error {
 			return e
 		}
 
-		if !info.Mode().IsRegular() {
+		if !info.Mode().IsRegular() || info.IsDir() {
 			return nil
 		}
 
 		header := &tar.Header{
-			Name: path[len(walkRoot):],
+			Name: path[len(walkRoot)+1:],
 			Mode: 0777,
 			Size: info.Size(),
 		}
