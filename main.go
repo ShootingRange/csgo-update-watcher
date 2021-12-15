@@ -10,6 +10,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/google/uuid"
+	"github.com/gtuk/discordwebhook"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"io"
@@ -28,6 +29,7 @@ type UpdateWatcher struct {
 	dockerCli        *client.Client
 	checkFrequency   time.Duration
 	buildContextFile string
+	discordHook      string
 }
 
 func main() {
@@ -38,7 +40,7 @@ func main() {
 		panic(err)
 	}
 
-	updateWatcher := New("csgo-watched", cli, time.Minute*5)
+	updateWatcher := New("csgo-watched", cli, time.Second*5, os.Getenv("DISCORD_HOOK"))
 	if err := updateWatcher.Start(false); err != nil {
 		panic(err)
 	}
@@ -50,13 +52,14 @@ func must(err error) {
 	}
 }
 
-func New(baseImageName string, dockerCli *client.Client, checkFrequency time.Duration) *UpdateWatcher {
+func New(baseImageName string, dockerCli *client.Client, checkFrequency time.Duration, discordHook string) *UpdateWatcher {
 	return &UpdateWatcher{
 		context.Background(),
 		baseImageName,
 		dockerCli,
 		checkFrequency,
 		"",
+		discordHook,
 	}
 }
 
@@ -73,6 +76,22 @@ func (this *UpdateWatcher) Start(stopOnError bool) error {
 
 	// Enter main loop
 	return this.watchAndBuild(stopOnError)
+}
+
+func (this *UpdateWatcher) announceNewVersion(buildid int) {
+	if this.discordHook == "" {
+		return
+	}
+
+	username := "CS:GO update watcher"
+	content := "New CS:GO version released, buildid " + strconv.Itoa(buildid)
+	err := discordwebhook.SendMessage(this.discordHook, discordwebhook.Message{
+		Username: &username,
+		Content:  &content,
+	})
+	if err != nil {
+		log.Err(err).Msg("Failed to send new version announcement")
+	}
 }
 
 func (this *UpdateWatcher) createBuildContext() error {
@@ -157,6 +176,8 @@ func (this *UpdateWatcher) watchAndBuild(stopOnError bool) error {
 		log.Debug().Int("newest-build-version", newestBuildVersion).Msg("Newest CS:GO buildid with build container image")
 
 		if newestBuildVersion < latestVersion {
+			go this.announceNewVersion(latestVersion)
+
 			containerImage, buildid, err := this.buildContainerAndPublish()
 			if err != nil {
 				log.Err(err).Msg("Failed to build container image with latest CS:GO version")
