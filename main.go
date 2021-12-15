@@ -276,28 +276,42 @@ func (this *UpdateWatcher) buildContainerAndPublish() (string, int, error) {
 
 // Build the base image if it is not present on the docker host
 func (this *UpdateWatcher) ensureBaseImage() error {
-	_, _, err := this.dockerCli.ImageInspectWithRaw(this.ctx, this.BaseImageName + ":base")
+	tag := this.BaseImageName + ":base"
+
+	_, _, err := this.dockerCli.ImageInspectWithRaw(this.ctx, tag)
 	if err != nil {
-		// TODO determine if the base image is absent
-		return fmt.Errorf("failed to check for base image: %w", err)
+		if client.IsErrNotFound(err) {
+			// Build image
+		} else {
+			return fmt.Errorf("could not inspect base image: %w", err)
+		}
+	} else {
+		// Base image already exists
+		log.Trace().Msg("Base image already exists, not rebuilding")
+		return nil
 	}
+
+	log.Info().Msg("Building base image")
 
 	contextTar, err := os.Open(this.buildContextFile)
 	if err != nil {
 		return fmt.Errorf("failed to open build context tar: %w", err)
 	}
-	defer must(contextTar.Close())
 
-	tag := this.BaseImageName + ":base"
 	buildResp, err := this.dockerCli.ImageBuild(this.ctx, contextTar, types.ImageBuildOptions{
-		Tags: []string{tag},
-		NoCache: true,
+		Tags:       []string{tag},
+		NoCache:    true,
 		Dockerfile: "Dockerfile",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to build cs:go container: %w", err)
 	}
-	defer must(buildResp.Body.Close())
+
+	if _, err := io.Copy(ioutil.Discard, buildResp.Body); err != nil {
+		return fmt.Errorf("error while reading build log: %w", err)
+	}
+
+	log.Trace().Msg("Finished building base image")
 
 	return nil
 }
