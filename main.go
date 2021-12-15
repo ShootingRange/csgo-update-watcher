@@ -242,7 +242,18 @@ func (this *UpdateWatcher) runScript(script string) (string, error) {
 // Retrieve the latest buildid/version from Steam
 func (this *UpdateWatcher) latestVersion() (int, error) {
 	// Start base image running the helper-latest-version.sh script
-	panic("Not implemented")
+	logs, err := this.runScript("/usr/src/helper-latest-buildid.sh")
+	if err != nil {
+		return 0, fmt.Errorf("failed to run script for checking latest CS:GO version on Steam: %w", err)
+	}
+	// NOTE strip trailing newline
+	buildid, err := strconv.Atoi(logs[:len(logs)-1])
+	if err != nil {
+		log.Err(err).Str("logs", logs).Msg("Failed to parse buildid")
+		return 0, fmt.Errorf("failed to parse buildid: %w", err)
+	}
+
+	return buildid, nil
 }
 
 // Get the buildid of newest version of CS:GO that the host have a container image of
