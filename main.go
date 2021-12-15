@@ -259,7 +259,39 @@ func (this *UpdateWatcher) latestVersion() (int, error) {
 // Get the buildid of newest version of CS:GO that the host have a container image of
 func (this *UpdateWatcher) newestBuildVersion() (int, error) {
 	// Check list of container images on Docker host and extract buildid from tag
-	panic("Not implemented")
+
+	images, err := this.dockerCli.ImageList(this.ctx, types.ImageListOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list images on docker host: %w", err)
+	}
+
+	expectedPrefix := this.BaseImageName + ":buildid-"
+	largestBuildid := -1
+	for _, image := range images {
+		for _, tag := range image.RepoTags {
+			// Check if prefix matches
+
+			if len(tag) <= len(expectedPrefix) {
+				continue
+			}
+
+			if tag[:len(expectedPrefix)] != expectedPrefix {
+				continue
+			}
+
+			buildidStr := tag[len(expectedPrefix):]
+			buildid, err := strconv.Atoi(buildidStr)
+			if err != nil {
+				log.Warn().Str("tag", tag).Msg("Failed to extract buildid from container tag")
+			}
+
+			if largestBuildid < buildid {
+				largestBuildid = buildid
+			}
+		}
+	}
+
+	return largestBuildid, nil
 }
 
 // Build a new container image with the latest version installed, and tag it with the buildid.
