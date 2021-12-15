@@ -21,10 +21,6 @@ import (
 
 const CSGO_CONTAINER_FILES = "./csgo-container"
 
-type Config struct {
-	ImageName string `json:"image_name"`
-}
-
 type UpdateWatcher struct {
 	ctx           context.Context
 	BaseImageName string
