@@ -35,6 +35,8 @@ type UpdateWatcher struct {
 }
 
 func main() {
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
+
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		panic(err)
