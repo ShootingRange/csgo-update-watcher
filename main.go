@@ -181,11 +181,11 @@ func (this *UpdateWatcher) watchAndBuild(stopOnError bool) error {
 	return nil
 }
 
-func (this *UpdateWatcher) runScript(script string) (string, error) {
+func (this *UpdateWatcher) runScript(script string, image string) (string, error) {
 	// Start base image running the helper-latest-version.sh script
 
 	containerConfig := &container.Config{
-		Image:      this.BaseImageName + ":base",
+		Image:      image,
 		Shell:      []string{"/bin/sh"},
 		Cmd:        []string{script},
 		Entrypoint: []string{"/bin/sh"},
@@ -195,15 +195,15 @@ func (this *UpdateWatcher) runScript(script string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create container for getting latest version on Steam: %w", err)
 	}
-	buildContainerID := result.ID
+	containerID := result.ID
 	log.Trace().Msg("Created container")
 
-	if err := this.dockerCli.ContainerStart(this.ctx, buildContainerID, types.ContainerStartOptions{}); err != nil {
+	if err := this.dockerCli.ContainerStart(this.ctx, containerID, types.ContainerStartOptions{}); err != nil {
 		return "", fmt.Errorf("failed to start container that gets latest version from Steam: %w", err)
 	}
 	log.Trace().Msg("Started container")
 
-	wait, errChan := this.dockerCli.ContainerWait(this.ctx, buildContainerID, container.WaitConditionNotRunning)
+	wait, errChan := this.dockerCli.ContainerWait(this.ctx, containerID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errChan:
 		return "", fmt.Errorf("error while waiting for Steam version retriever container to stop: %w", err)
@@ -216,7 +216,7 @@ func (this *UpdateWatcher) runScript(script string) (string, error) {
 		ShowStdout: true,
 		ShowStderr: false,
 	}
-	logReader, err := this.dockerCli.ContainerLogs(this.ctx, buildContainerID, logOptions)
+	logReader, err := this.dockerCli.ContainerLogs(this.ctx, containerID, logOptions)
 	if err != nil {
 		return "", fmt.Errorf("could not request logs from container: %w", err)
 	}
@@ -232,7 +232,7 @@ func (this *UpdateWatcher) runScript(script string) (string, error) {
 	logs := string(logBytes)
 
 	// Remove container
-	if err := this.dockerCli.ContainerRemove(this.ctx, buildContainerID, types.ContainerRemoveOptions{}); err != nil {
+	if err := this.dockerCli.ContainerRemove(this.ctx, containerID, types.ContainerRemoveOptions{}); err != nil {
 		return "", fmt.Errorf("failed to remove container: %w", err)
 	}
 
@@ -242,7 +242,7 @@ func (this *UpdateWatcher) runScript(script string) (string, error) {
 // Retrieve the latest buildid/version from Steam
 func (this *UpdateWatcher) latestVersion() (int, error) {
 	// Start base image running the helper-latest-version.sh script
-	logs, err := this.runScript("/usr/src/helper-latest-buildid.sh")
+	logs, err := this.runScript("/usr/src/helper-latest-buildid.sh", this.BaseImageName+":base")
 	if err != nil {
 		return 0, fmt.Errorf("failed to run script for checking latest CS:GO version on Steam: %w", err)
 	}
