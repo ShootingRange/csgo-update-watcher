@@ -300,13 +300,38 @@ func (this *UpdateWatcher) buildContainerAndPublish() (string, int, error) {
 	log.Info().Msg("Building new CS:GO container")
 
 	// build CS:GO container image with game preinstalled
-	tempTag, err := this.buildContainer()
+	tempTag := this.BaseImageName + ":temp-" + uuid.NewString()
+	err := this.buildContainer(
+		tempTag,
+		this.BaseImageName+":base",
+		"Dockerfile-preinstall",
+	)
 	if err != nil {
 		return "", 0, err
 	}
 
 	// run build container to determine buildid of installed version, use helper-installed-buildid.sh
-	taggedImage, buildid, err := this.tagWithBuildid(tempTag)
+	buildid, err := this.getImageBuildid(tempTag)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// tag container with buildid
+	taggedImage := this.BaseImageName + ":preinstall-buildid-" + strconv.Itoa(buildid)
+	if err := this.dockerCli.ImageTag(this.ctx, tempTag, taggedImage); err != nil {
+		return "", 0, fmt.Errorf("failed to tag newly build cs:go container with buildid: %w", err)
+	}
+
+	// build get5 container
+	get5TaggedImage := this.BaseImageName + ":get5-buildid-" + strconv.Itoa(buildid)
+	err = this.buildContainer(
+		get5TaggedImage,
+		taggedImage,
+		"Dockerfile-get5",
+	)
+	if err != nil {
+		return "", 0, err
+	}
 
 	/*
 		if pushReader, err := this.dockerCli.ImagePush(this.ctx, taggedImage, types.ImagePushOptions{}); err != nil {
@@ -363,55 +388,47 @@ func (this *UpdateWatcher) ensureBaseImage() error {
 	return nil
 }
 
-func (this *UpdateWatcher) buildContainer() (string, error) {
+func (this *UpdateWatcher) buildContainer(baseImage string, resultTag string, dockerfile string) error {
 	log.Info().Msg("Building preinstalled image")
 
 	contextTar, err := os.Open(this.buildContextFile)
 	if err != nil {
-		return "", fmt.Errorf("failed to open build context tar: %w", err)
+		return fmt.Errorf("failed to open build context tar: %w", err)
 	}
 
-	tempTag := this.BaseImageName + ":temp-" + uuid.NewString()
-	baseTag := this.BaseImageName + ":base"
 	buildResp, err := this.dockerCli.ImageBuild(this.ctx, contextTar, types.ImageBuildOptions{
-		Tags:       []string{tempTag},
+		Tags:       []string{resultTag},
 		NoCache:    true,
-		Dockerfile: "Dockerfile-preinstall",
+		Dockerfile: dockerfile,
 		BuildArgs: map[string]*string{
-			"BASE_IMAGE": &baseTag,
+			"BASE_IMAGE": &baseImage,
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to build cs:go container: %w", err)
+		return fmt.Errorf("failed to build cs:go container: %w", err)
 	}
 
 	//buildOutput := ioutil.Discard
 	buildOutput := os.Stdout
 	if _, err := io.Copy(buildOutput, buildResp.Body); err != nil {
-		return "", fmt.Errorf("error while reading build log: %w", err)
+		return fmt.Errorf("error while reading build log: %w", err)
 	}
 
 	log.Trace().Msg("Finished building preinstalled image")
 
-	return tempTag, err
+	return err
 }
 
-func (this *UpdateWatcher) tagWithBuildid(tag string) (string, int, error) {
+func (this *UpdateWatcher) getImageBuildid(tag string) (int, error) {
 	logs, err := this.runScript("/usr/src/helper-installed-buildid.sh", tag)
 	if err != nil {
-		return "", 0, fmt.Errorf("faile to run script for getting installed CS:GO version: %w", err)
+		return 0, fmt.Errorf("faile to run script for getting installed CS:GO version: %w", err)
 	}
 
 	buildid, err := strconv.Atoi(logs[:len(logs)-1])
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to parse buildid of newly build cs:go container")
+		return 0, fmt.Errorf("failed to parse buildid of newly build cs:go container")
 	}
 
-	// tag container with buildid
-	taggedImage := this.BaseImageName + ":buildid-" + strconv.Itoa(buildid)
-	if err := this.dockerCli.ImageTag(this.ctx, tag, taggedImage); err != nil {
-		return "", 0, fmt.Errorf("failed to tag newly build cs:go container with buildid: %w", err)
-	}
-
-	return taggedImage, buildid, nil
+	return buildid, nil
 }
