@@ -323,8 +323,8 @@ func (this *UpdateWatcher) buildContainerAndPublish() (string, int, error) {
 	// build CS:GO container image with game preinstalled
 	tempTag := this.BaseImageName + ":temp-" + uuid.NewString()
 	err := this.buildContainer(
-		tempTag,
 		this.BaseImageName+":base",
+		tempTag,
 		"Dockerfile-preinstall",
 	)
 	if err != nil {
@@ -346,8 +346,8 @@ func (this *UpdateWatcher) buildContainerAndPublish() (string, int, error) {
 	// build get5 container
 	get5TaggedImage := this.BaseImageName + ":get5-buildid-" + strconv.Itoa(buildid)
 	err = this.buildContainer(
-		get5TaggedImage,
 		taggedImage,
+		get5TaggedImage,
 		"Dockerfile-get5",
 	)
 	if err != nil {
